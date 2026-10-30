@@ -1,0 +1,79 @@
+name: xrixuid-cloud
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xrixuid
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in cloud/.env}"
+      POSTGRES_DB: xrixuid
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xrixuid -d xrixuid"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile.app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://xrixuid:${DB_PASSWORD:?required}@db:5432/xrixuid"
+      ADMIN_KEY: "${ADMIN_KEY:?required}"
+      CONTROL_TOKEN: "${CONTROL_TOKEN:?required}"
+      DATA_DIR: /srv/data
+      NODE_ENV: production
+      LOG_LEVEL: info
+    volumes:
+      - app_data:/srv/data
+      - app_logs:/srv/logs
+    expose:
+      - "3000"
+      - "9100"
+
+  bot:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    command: ["python", "-u", "/cloud/bot.py"]
+    volumes:
+      - ./bot.py:/cloud/bot.py:ro
+    environment:
+      TG_BOT_TOKEN: "${TG_BOT_TOKEN:?required}"
+      TG_OWNER_ID: "${TG_OWNER_ID:?required}"
+      CONTROL_TOKEN: "${CONTROL_TOKEN:?required}"
+      CONTROL_URL: http://app:9100
+    depends_on:
+      app:
+        condition: service_started
+
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: "${DOMAIN:?required}"
+      WEB_USER: "${WEB_USER:?required}"
+      WEB_HASH: "${WEB_HASH:?required}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  app_data:
+  app_logs:
+  caddy_data:
+  caddy_config:
