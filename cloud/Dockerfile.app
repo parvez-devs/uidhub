@@ -17,7 +17,7 @@ RUN curl -fsSL --retry 3 https://raw.githubusercontent.com/parvez-devs/uidhub/ma
 RUN npm install -g pnpm@10 && pnpm install --no-frozen-lockfile && PORT=3000 BASE_PATH=/ NODE_ENV=production pnpm run build:deploy
 
 FROM node:24-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates && rm -rf /var/lib/apt/lists/* && npm install -g pnpm@10
 WORKDIR /srv/app
 COPY --from=builder /srv/app /srv/app
 COPY cloud/supervisor.py /srv/supervisor.py
