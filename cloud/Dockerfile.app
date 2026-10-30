@@ -14,6 +14,13 @@ WORKDIR /srv/app
 RUN curl -fsSL --retry 3 https://raw.githubusercontent.com/parvez-devs/uidhub/main/termux/uid-prefix.patch.gz.b64 -o /tmp/uid-prefix.gz.b64 \
  && base64 -d /tmp/uid-prefix.gz.b64 | gzip -dc | patch --batch --forward --fuzz=0 -p1 \
  && rm -f /tmp/uid-prefix.gz.b64
+# Support both x86_64 and ARM64 cloud VPS hosts.
+RUN sed -i \
+  -e '/"esbuild>@esbuild\\/linux-arm64": "-"/d' \
+  -e '/"lightningcss>lightningcss-linux-arm64-gnu": "-"/d' \
+  -e '/"@tailwindcss\\/oxide>@tailwindcss\\/oxide-linux-arm64-gnu": "-"/d' \
+  -e '/"rollup>@rollup\\/rollup-linux-arm64-gnu": "-"/d' \
+  pnpm-workspace.yaml
 RUN npm install -g pnpm@10 && pnpm install --no-frozen-lockfile && PORT=3000 BASE_PATH=/ NODE_ENV=production pnpm run build:deploy
 
 FROM node:24-bookworm-slim
