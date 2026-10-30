@@ -106,8 +106,8 @@ def read_logs():
             if value:
                 last = last.replace(value, "[REDACTED]")
         return re.sub(
-            r"(?i)(cookie|authorization|password|secret|access_token)\\s*[:=]\\s*[^\\s,;]+",
-            r"\\1=[REDACTED]", last,
+            r"(?i)(cookie|authorization|password|secret|access_token)\s*[:=]\s*[^\s,;]+",
+            r"\1=[REDACTED]", last,
         )
     except OSError:
         return "No logs yet."
