@@ -1,0 +1,40 @@
+--- a/artifacts/uid-web/src/components/uid-card.tsx
++++ b/artifacts/uid-web/src/components/uid-card.tsx
+@@ -59,8 +59,15 @@
+     else { setCopiedUser(true); setTimeout(() => setCopiedUser(false), 2000); }
+   };
+ 
++  // Android deep link: opens the official Facebook app (com.facebook.katana).
++  // Intentionally no browser_fallback_url: UID taps must not redirect to the web.
++  const facebookUID = entry.uid.trim();
++  const facebookAppHref = /^[0-9]+$/.test(facebookUID)
++    ? `intent://profile/${facebookUID}#Intent;scheme=fb;package=com.facebook.katana;end`
++    : undefined;
++
+   const openFB = () => {
+-    window.location.href = `fb://profile/${entry.uid}`;
++    if (facebookAppHref) window.location.assign(facebookAppHref);
+   };
+ 
+   const initials = entry.name
+@@ -314,14 +321,16 @@
+           {/* UID row */}
+           <div className="flex items-center gap-1.5 text-xs">
+             <span className="text-[var(--text-muted)] font-mono shrink-0 w-7">UID</span>
+-            <span
++            <a
++              href={facebookAppHref}
+               className="font-mono text-[var(--text-primary)] truncate cursor-pointer hover:text-[var(--primary)] transition-colors flex-1 min-w-0"
+-              onClick={() => copy(entry.uid, "uid")}
+-              title="Tap to copy UID"
++              title="Open in the official Facebook app"
++              aria-label={`Open Facebook app profile for UID ${entry.uid}`}
++              data-testid={`link-facebook-${entry.id}`}
+               style={{ touchAction: "manipulation" }}
+             >
+               {entry.uid}
+-            </span>
++            </a>
+             <button
+               onClick={() => copy(entry.uid, "uid")}
+               className="shrink-0 text-[var(--text-muted)] hover:text-[var(--primary)] transition-colors p-1.5"
