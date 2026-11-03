@@ -2,7 +2,7 @@
 # XRIXUID Fetch 3x Trial — opt-in and fully reversible.
 # Only modifies $HOME/projects/xrixuid/artifacts/uid-web/src/hooks/use-uids.ts.
 set -Eeuo pipefail
-MODE="\${1:-check}"
+MODE="${1:-check}"
 ROOT="$HOME/projects/xrixuid"
 SOURCE="$ROOT/artifacts/uid-web/src/hooks/use-uids.ts"
 BACKUPS="$HOME/xrixuid-fetch-3x-backups"
