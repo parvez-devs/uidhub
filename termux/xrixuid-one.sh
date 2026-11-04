@@ -136,6 +136,12 @@ export function startBackgroundFetch(items:UIDEntry[]):Promise<void> {
 client=one(client,anchor,wrapper+anchor)
 client=one(client,"    lastError=null;emit();\n  } catch(e) {\n    lastError=e instanceof Error?e.message:String(e);\n    emit();\n  } finally {inPoll=false;}",
     "    if(!lastError?.startsWith('Fetch not started:')&&!lastError?.startsWith('Another job is running.'))lastError=null;emit();\n  } catch(e) {\n    lastError=e instanceof Error?e.message:String(e);\n    emit();\n  } finally {inPoll=false;}")
+client=one(client,
+    "  await request(`/${encodeURIComponent(id)}/stop`,{method:'POST'});\n  await pollBackgroundFetch();",
+    "  try {await request(`/${encodeURIComponent(id)}/stop`,{method:'POST'});await pollBackgroundFetch();}\n  catch(err){lastError=err instanceof Error?err.message:String(err);emit();}")
+client=one(client,
+    "  await request(`/${encodeURIComponent(id)}/resume`,{method:'POST'});\n  await pollBackgroundFetch();",
+    "  try {await request(`/${encodeURIComponent(id)}/resume`,{method:'POST'});await pollBackgroundFetch();}\n  catch(err){lastError=err instanceof Error?err.message:String(err);emit();}")
 vite=s[paths[2]]
 old="hmr: (process.env.HOME || '').includes('/data/data/com.termux') ? false : undefined,"
 new="hmr: (process.env.PORT === '3000' || (process.env.HOME || '').includes('/data/data/com.termux')) ? false : undefined, // "+marker
