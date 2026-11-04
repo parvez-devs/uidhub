@@ -250,6 +250,9 @@ if [[ "$MODE" == wait ]]; then
   while true; do
     count="$(active)"
     if [[ "$count" == 0 ]]; then break; fi
+    if [[ "$count" == unknown ]]; then
+      fail 'Queue database cannot be verified during deferred install; existing project retained.'
+    fi
     sleep 20
   done
   MODE=install
