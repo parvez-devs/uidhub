@@ -17,35 +17,57 @@ case "$MODE" in install|wait|status|start|logs|rollback) ;; *) fail 'Usage: inst
 [[ "$MODE" == logs ]] && { bash "$LAUNCH" logs; exit 0; }
 [[ "$MODE" == start ]] && { termux-wake-lock 2>/dev/null || true; bash "$LAUNCH" start; exit 0; }
 
-# A read-only PostgreSQL probe. Never infer "idle" from an API that only shows one job.
-# Three bounded retries handle temporary connections/locks; explicit diagnostics on failure.
+# Read queue state using EXACTLY the database URL loaded by .launch-api.sh.
+# Never treat a missing table as an idle queue: it may indicate a different cluster.
 active() {
-  local dbuser count detail attempt
+  local count detail attempt
   if ! grep -Fq 'XRIXUID_QUEUE_V1' "$ROOT/artifacts/api-server/src/app.ts" 2>/dev/null; then
     printf '0'; return
   fi
-  dbuser="$(cat "$ROOT/.termux-db-user" 2>/dev/null || whoami)"
+  if [[ ! -r "$ROOT/.xrixuid.env" ]]; then
+    log 'Application database configuration missing; no changes.' >&2
+    printf unknown; return
+  fi
   for attempt in 1 2 3; do
-    if detail="$(PGHOST=127.0.0.1 PGPORT=5432 PGUSER="$dbuser" PGCONNECT_TIMEOUT=3 psql \
-      -X -w -A -t -v ON_ERROR_STOP=1 -d uid_operator \
-      -c "SELECT count(*)::text FROM xrixuid_jobs WHERE state IN ('running','paused')" 2>&1)"; then
+    if detail="$(
+      # Same configuration as the existing API launcher, without printing credentials.
+      . "$ROOT/.xrixuid.env"
+      if [[ -z "${DATABASE_URL:-}" ]]; then
+        printf 'DATABASE_URL not set in .xrixuid.env\n' >&2; exit 1
+      fi
+      PGCONNECT_TIMEOUT=3 psql -X -w -A -t -v ON_ERROR_STOP=1 "$DATABASE_URL" \
+        -c "SELECT CASE WHEN to_regclass('xrixuid_jobs') IS NULL THEN 'MISSING' ELSE (SELECT count(*)::text FROM xrixuid_jobs WHERE state IN ('running','paused')) END" 2>&1
+    )"; then
       count="$(printf '%s' "$detail" | tr -d '[:space:]')"
       if [[ "$count" =~ ^[0-9]+$ ]]; then printf '%s' "$count"; return; fi
+      if [[ "$count" == MISSING ]]; then
+        log 'Queue table not found via the API-configured DATABASE_URL. Refusing update (database/schema mismatch or queue schema missing).' >&2
+        (
+          . "$ROOT/.xrixuid.env"
+          psql -X -w -A -F ' | ' -t -v ON_ERROR_STOP=1 "$DATABASE_URL" \
+            -c "SELECT current_database(),current_user,current_schema(),(SELECT count(*) FROM pg_catalog.pg_tables WHERE tablename='xrixuid_jobs')" 2>/dev/null
+        ) >&2 || true
+        log 'Read-only API status (may report only latest job):' >&2
+        curl -sS --connect-timeout 2 --max-time 5 http://127.0.0.1:8080/api/queue/current >&2 || true
+        printf '\n' >&2
+        printf unknown; return
+      fi
     fi
     sleep 1
   done
-  log "PostgreSQL read-only queue probe failed: ${detail:0:350}" >&2
-  printf 'unknown'
+  log "PostgreSQL probe via application DATABASE_URL failed: ${detail:0:350}" >&2
+  printf unknown
 }
 report() {
   bash "$LAUNCH" status || true
-  local dbuser
-  dbuser="$(cat "$ROOT/.termux-db-user" 2>/dev/null || whoami)"
   if grep -Fq XRIXUID_QUEUE_V1 "$ROOT/artifacts/api-server/src/app.ts" 2>/dev/null; then
-    PGHOST=127.0.0.1 PGPORT=5432 PGUSER="$dbuser" psql -d uid_operator -P pager=off -c "
+    (
+      . "$ROOT/.xrixuid.env"
+      psql -X -w "$DATABASE_URL" -P pager=off -c "
       SELECT state,count(*) AS jobs,sum((SELECT count(*) FROM xrixuid_items i WHERE i.job_id=j.id)) AS items
       FROM xrixuid_jobs j GROUP BY state ORDER BY state
-    " 2>/dev/null || true
+    "
+    ) 2>/dev/null || true
     curl --connect-timeout 2 --max-time 6 -fsS http://127.0.0.1:8080/api/queue/current 2>/dev/null || true
     echo
   fi
