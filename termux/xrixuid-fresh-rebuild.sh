@@ -22,7 +22,10 @@ for f in \
   "$HOME/xrixuid-queue-integration/apply.py" \
   "$HOME/xrixuid-queue-integration/queue.ts" \
   "$HOME/xrixuid-queue-integration/queue-client.ts" \
-  "$HOME/xrixuid-queue-413-hotfix/setup.sh"; do
+  "$HOME/xrixuid-queue-integration/storage.ts" \
+  "$HOME/xrixuid-queue-integration/queue-controls.tsx" \
+  "$HOME/xrixuid-queue-413-hotfix/setup.sh" \
+  "$HOME/xrixuid-queue-413-hotfix/patch.py"; do
   [[ -s "$f" ]] || die "Required on-device integration missing: $f. No reset performed."
 done
 log 'Installing Termux packages and downloading clean, known sources BEFORE reset.'
@@ -33,6 +36,9 @@ curl -fLsS --retry 3 "$BASE/xrixuid.zip" -o "$T/xrixuid.zip"
 unzip -tq "$T/xrixuid.zip" >/dev/null || die 'Clean repository archive failed integrity check; old data untouched.'
 for name in xrixuid-termux.sh apply-smooth-ui-v2.sh upgrade-uid-pagination.sh trial-fetch-3x.sh trial-fetch-4x.sh xrixuid-one.sh; do
   curl -fLsS --retry 3 "$BASE/termux/$name" -o "$T/$name" || die "Cannot download $name; no reset performed."
+done
+for patch_file in uid-prefix.patch.gz.b64 smooth-ui-v2.patch.gz.b64; do
+  curl -fLsS --retry 3 "$BASE/termux/$patch_file" -o "$T/$patch_file" || die "Cannot download $patch_file; no reset performed."
 done
 [[ -s "$T/xrixuid-one.sh" ]] || die 'One-command updater missing; no reset performed.'
 
@@ -129,6 +135,9 @@ for path in "$HOME/xrixuid-queue-backups" "$HOME/xrixuid-queue-413-backups" \
   "$HOME/xrixuid-one-v2-backups" "$HOME/xrixuid-pagination-backups" \
   "$HOME/xrixuid-fetch-3x-backups" "$HOME/xrixuid-fetch-4x-backups" \
   "$HOME/xrixuid-ui-backups"; do rm -rf -- "$path"; done
-log 'READY: new XRIXUID, fresh database, 4x queue, Stop/Resume, IndexedDB.'
+rm -f "$ROOT/artifacts/uid-web/src/App.tsx.before-uid-prefix" \
+  "$ROOT/artifacts/uid-web/src/pages/home.tsx.before-uid-prefix" \
+  "$ROOT/pnpm-workspace.yaml.before-termux-setup"
+log 'READY: new XRIXUID, fresh database, 4x queue, Stop/Resume, IndexedDB.' 
 log 'Dashboard: http://127.0.0.1:3000'
 log 'IMPORTANT: Close old Chrome tabs, open a new one, then refresh once to clear old browser UID storage.'
