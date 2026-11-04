@@ -17,18 +17,25 @@ case "$MODE" in install|wait|status|start|logs|rollback) ;; *) fail 'Usage: inst
 [[ "$MODE" == logs ]] && { bash "$LAUNCH" logs; exit 0; }
 [[ "$MODE" == start ]] && { termux-wake-lock 2>/dev/null || true; bash "$LAUNCH" start; exit 0; }
 
-# Return 0 when idle; "unknown" if PostgreSQL cannot be read. Never guess.
+# A read-only PostgreSQL probe. Never infer "idle" from an API that only shows one job.
+# Three bounded retries handle temporary connections/locks; explicit diagnostics on failure.
 active() {
-  local dbuser count
+  local dbuser count detail attempt
   if ! grep -Fq 'XRIXUID_QUEUE_V1' "$ROOT/artifacts/api-server/src/app.ts" 2>/dev/null; then
     printf '0'; return
   fi
   dbuser="$(cat "$ROOT/.termux-db-user" 2>/dev/null || whoami)"
-  count="$(PGHOST=127.0.0.1 PGPORT=5432 PGUSER="$dbuser" psql -d uid_operator -tAc "
-    SELECT (SELECT count(*) FROM xrixuid_jobs WHERE state='running') +
-           (SELECT count(*) FROM xrixuid_items WHERE state='inflight')
-  " 2>/dev/null | tr -d '[:space:]')" || { printf 'unknown'; return; }
-  [[ "$count" =~ ^[0-9]+$ ]] && printf '%s' "$count" || printf 'unknown'
+  for attempt in 1 2 3; do
+    if detail="$(PGHOST=127.0.0.1 PGPORT=5432 PGUSER="$dbuser" PGCONNECT_TIMEOUT=3 psql \
+      -X -w -A -t -v ON_ERROR_STOP=1 -d uid_operator \
+      -c "SELECT count(*)::text FROM xrixuid_jobs WHERE state IN ('running','paused')" 2>&1)"; then
+      count="$(printf '%s' "$detail" | tr -d '[:space:]')"
+      if [[ "$count" =~ ^[0-9]+$ ]]; then printf '%s' "$count"; return; fi
+    fi
+    sleep 1
+  done
+  log "PostgreSQL read-only queue probe failed: ${detail:0:350}" >&2
+  printf 'unknown'
 }
 report() {
   bash "$LAUNCH" status || true
@@ -236,7 +243,7 @@ if [[ "$count" != 0 ]]; then
     log 'An updater is already waiting for the active job to finish.'
   else
     tmux new-session -d -s xrixuid-one-update "bash '$SELF' wait >>'$HOME/xrixuid-one-v2.log' 2>&1"
-    log "Job active ($count running/in-flight markers). Update queued locally without interrupting it."
+    log "Job active ($count running/paused job markers). Update queued locally without interrupting it."
     log "After it completes, check: tail -n 30 ~/xrixuid-one-v2.log"
   fi
   log 'Dashboard continues at http://127.0.0.1:3000'
