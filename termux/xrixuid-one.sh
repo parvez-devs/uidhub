@@ -238,7 +238,38 @@ if [[ "$count" != 0 ]]; then
 fi
 
 # The existing v1.1 queue and 4x worker are preserved. Install missing layers only.
-trap 'rc=$?; trap - ERR; log "Update failed (exit $rc). Attempting source rollback"; rollback_applied || true; exit "$rc"' ERR
+NEW_V11=0
+NEW_V12=0
+NEW_V2=0
+rollback_current_run() {
+  if [[ "$NEW_V2" == 1 ]]; then
+    reliability rollback || true
+    sed -i '/^v2$/d' "$STATE" 2>/dev/null || true
+  fi
+  if [[ "$NEW_V12" == 1 ]]; then
+    bash "$HOME/xrixuid-queue-413-hotfix/setup.sh" rollback || true
+    sed -i '/^v12$/d' "$STATE" 2>/dev/null || true
+  fi
+  if [[ "$NEW_V11" == 1 ]]; then
+    bash "$HOME/xrixuid-queue-integration/setup.sh" rollback || true
+    sed -i '/^v11$/d' "$STATE" 2>/dev/null || true
+  fi
+  if [[ "$NEW_V2" == 1 || "$NEW_V12" == 1 || "$NEW_V11" == 1 ]]; then
+    build || true
+    bash "$LAUNCH" stop || true
+    bash "$LAUNCH" start || true
+  fi
+}
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  if [[ "$rc" != 0 ]]; then
+    log "Update failed (exit $rc). Restoring only changes made by this run."
+    rollback_current_run
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
 termux-wake-lock 2>/dev/null || true
 if ! grep -Fq XRIXUID_QUEUE_V1 "$ROOT/artifacts/api-server/src/app.ts"; then
   [[ -f "$HOME/xrixuid-queue-integration/setup.sh" ]] ||
@@ -247,6 +278,7 @@ if ! grep -Fq XRIXUID_QUEUE_V1 "$ROOT/artifacts/api-server/src/app.ts"; then
   bash "$HOME/xrixuid-queue-integration/setup.sh" check
   bash "$HOME/xrixuid-queue-integration/setup.sh" install
   echo v11 >> "$STATE"
+  NEW_V11=1
 fi
 QUEUE_SERVER="$ROOT/artifacts/api-server/src/routes/queue.ts"
 QUEUE_CLIENT="$ROOT/artifacts/uid-web/src/lib/queue-client.ts"
@@ -268,18 +300,20 @@ if [[ "$has_server" == 0 ]]; then
   bash "$HOME/xrixuid-queue-413-hotfix/setup.sh" check
   bash "$HOME/xrixuid-queue-413-hotfix/setup.sh" install
   echo v12 >> "$STATE"
+  NEW_V12=1
 fi
 if ! grep -Fq XRIXUID_ONE_RELIABILITY_V2 "$QUEUE_SERVER"; then
   reliability check
   reliability install
   echo v2 >> "$STATE"
+  NEW_V2=1
   log 'Building and validating the existing project.'
   build
   bash "$LAUNCH" stop
   bash "$LAUNCH" start
 fi
 health || fail 'Queue health check failed'
-trap - ERR
+trap - EXIT
 log 'READY: http://127.0.0.1:3000'
 log 'Home: Stop/Resume, 4x server worker, real progress, 300-card pagination, IndexedDB.'
 log 'If needed: bash ~/xrixuid-one.sh status | rollback | logs'
